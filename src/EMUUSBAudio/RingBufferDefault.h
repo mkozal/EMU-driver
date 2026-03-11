@@ -130,7 +130,7 @@ public:
         return kIOReturnSuccess;
     }
     
-    void notifyWrap(AbsoluteTime time) override {
+    void notifyWrap(UInt64 time) override {
         // default: do nothing
     }
     

@@ -83,5 +83,5 @@ do { printf ( message ); } while (0)
 #define debugIOLogRD(message...) //debugIOLog(message);
 
 // debug all control-level messages (setup, initialization, takedown).
-#define debugIOLogC(message...) //debugIOLog(message);
+#define debugIOLogC(message...) debugIOLog(message);
 #endif

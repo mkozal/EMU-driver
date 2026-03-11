@@ -138,7 +138,6 @@ extern "C" {
     }
     
     //	Float32 -> SInt8
-#if defined(__i386__) || defined(__x86_64__)
     static void	ClipFloat32ToSInt8_4(const Float32* inInputBuffer, SInt8* outOutputBuffer, UInt32 inNumberSamples)
     {
          UInt32 theLeftOvers = inNumberSamples % 4;
@@ -252,18 +251,10 @@ extern "C" {
              UInt32 c = (UInt32)(SInt32)(theFloat32Value3 * kFloat32ToSInt32);
              UInt32 d = (UInt32)(SInt32)(theFloat32Value4 * kFloat32ToSInt32);
             
-#if defined(__i386__) || defined(__x86_64__)
-            // Wouter: removed al 'register' variables, register is deprecated and it clutters our warnings.
-			//						a    b    c    d					a    b    c    d
-			//	IN REGISTER:		123X 456X 789X ABCX					abc0 def0 ghi0 jkl0
-			//	OUT REGISTERS:		6123 8945 ABC7						fabc hide jklg
-			//	OUT MEMORY:			3216 5498 7CBA
-            
-			 SInt32 theOutputValue1 = ((b << 16) & 0xFF000000) | (a >> 8);
-			 SInt32 theOutputValue2 = ((c << 8) & 0xFFFF0000) | ((b >> 16) & 0x0000FFFF);
-			 SInt32 theOutputValue3 = (d & 0xFFFFFF00) | ((c >> 24) & 0x000000FF);
-            
-#endif
+            // Pack 4 x 32-bit values (upper 24 bits each) into 3 x 32-bit words (little-endian 24-bit)
+            SInt32 theOutputValue1 = ((b << 16) & 0xFF000000) | (a >> 8);
+            SInt32 theOutputValue2 = ((c << 8) & 0xFFFF0000) | ((b >> 16) & 0x0000FFFF);
+            SInt32 theOutputValue3 = (d & 0xFFFFFF00) | ((c >> 24) & 0x000000FF);
             
             //	store everything back to memory
             *(outOutputBuffer + 0) = theOutputValue1;
@@ -339,7 +330,7 @@ extern "C" {
             --inNumberSamples;
         }
     }
-#endif
+
     
     /*!
      Copy block of data from mixBuf into sampleBuf.
@@ -367,21 +358,14 @@ extern "C" {
             case 8:
 			{
 				SInt8* theOutputBufferSInt8 = ((SInt8*)sampleBuf) + theFirstSample;
-#if defined(__i386__) || defined(__x86_64__)
                 ClipFloat32ToSInt8_4(theMixBuffer, theOutputBufferSInt8, theNumberSamples);
-#endif
-				//ClipFloat32ToSInt8_4(theMixBuffer, theOutputBufferSInt8, theNumberSamples);
 			}
                 break;
                 
             case 16:
 			{
 				SInt16* theOutputBufferSInt16 = ((SInt16*)sampleBuf) + theFirstSample;
-                
-#if defined(__i386__) || defined(__x86_64__)
                 ClipFloat32ToSInt16LE_4(theMixBuffer, theOutputBufferSInt16, theNumberSamples);
-#endif
-				//ClipFloat32ToSInt16LE_4(theMixBuffer, theOutputBufferSInt16, theNumberSamples);
 			}
                 break;
                 
@@ -389,22 +373,14 @@ extern "C" {
             case 24:
 			{
 				SInt32* theOutputBufferSInt24 = (SInt32*)(((UInt8*)sampleBuf) + (theFirstSample * 3));
-                
-#if defined(__i386__) || defined(__x86_64__)
                 ClipFloat32ToSInt24LE_4(theMixBuffer, theOutputBufferSInt24, theNumberSamples);
-#endif
-				//ClipFloat32ToSInt24LE_4(theMixBuffer, theOutputBufferSInt24, theNumberSamples);
 			}
                 break;
                 
             case 32:
 			{
 				SInt32* theOutputBufferSInt32 = ((SInt32*)sampleBuf) + theFirstSample;
-                
-#if defined(__i386__) || defined(__x86_64__)
                 ClipFloat32ToSInt32LE_4(theMixBuffer, theOutputBufferSInt32, theNumberSamples);
-#endif
-				//ClipFloat32ToSInt32LE_4(theMixBuffer, theOutputBufferSInt32, theNumberSamples);
 			}
                 break;
         };

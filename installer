@@ -10,7 +10,7 @@
 #
 clear;echo;echo;echo "EMU USB Installer by W.Pasman"
 cd "$(dirname "$0")"
-pathname= pwd -P 
+pathname=$(pwd -P) 
 
 
 # os version returns something like 10.11.4. We need 2nd number.
@@ -46,13 +46,8 @@ echo; echo;
 #
 # Execute the installation
 #
-# determine the right version for this system
-if [ "$osversion" -gt "10" ] ; then
-	driverversion="v11"
-else
-	driverversion="v9"
-fi
-
+# Use the newly built driver for this system
+driverversion="src/build/Release"
 
 # make copy of the correct driver and adjust latency setting
 cp -r "$driverversion/EMUUSBAudio.kext" .
@@ -83,13 +78,16 @@ sudo cp -R EMUMIDIDriver\ orig.plugin /Library/Audio/MIDI\ Drivers/EMUMIDIDriver
 
 #do permissions stuff
 cd /Library/Audio/MIDI\ Drivers/
-sudo chgrp -R wheel EMUMIDIDriver.plugin
+sudo chown -R root:wheel EMUMIDIDriver.plugin
 cd "$kextdir"
-sudo chgrp -R wheel EMUUSBAudio.kext
+sudo chown -R root:wheel EMUUSBAudio.kext
 
 #load new kext
-sudo kextload -v 0 EMUUSBAudio.kext
-
+if [ "$osversion" -gt "15" ]; then
+	sudo kmutil load -p "$kextdir/EMUUSBAudio.kext"
+else
+	sudo kextload -v 0 "$kextdir/EMUUSBAudio.kext"
+fi
 echo "Waiting for the system to finish installation. Can take several minutes."
 if [ "$osversion" -gt "11" ] ; then
   SCRIPT='/rebuilding/ { print "Rebuilding the kernel" } /KernelCache ID/ { print "Kernel built. Updating cache" } /Directory caches updated/ { exit } '

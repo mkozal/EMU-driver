@@ -39,7 +39,7 @@
 
 #include <libkern/OSTypes.h>
 #if DEBUGLOGGING
-#include <IOKit/usb/IOUSBLog.h>
+//#include <IOKit/usb/IOUSBLog.h>
 //#include <IOKit/firewire/IOFireLog.h>
 #endif
 enum {

@@ -119,7 +119,7 @@ struct UsbInputRing: RingBufferDefault<UInt8>
      I guess that the timestamp is for completion of the frame but I can't find
      it in the USB documentations.
      */
-    void                notifyWrap(AbsoluteTime time);
+    void                notifyWrap(UInt64 time);
     
     /*! get time (Absolute time in nanoseconds) since last wrap */
     //    UInt64              getLastWrapTime();
@@ -487,12 +487,9 @@ protected:
      */
     virtual IOReturn convertInputSamples (const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, IOAudioStream *audioStream);
 	
-    /*! This gets called when the HAL wants to select one of the different formats that we made available via mainStream->addAvailableFormat
-     @param audioStream
-     @param newformat the details for the requested format.
-     @param newSampleRate the requested sample rate.  Note that this is not part of the IOAudioStreamFormat.
-     */
     virtual IOReturn performFormatChange (IOAudioStream *audioStream, const IOAudioStreamFormat *newFormat, const IOAudioSampleRate *newSampleRate);
+    
+    virtual bool driverDesiresHiResSampleIntervals(void) { return false; }
     
     /*! Internal call to change format. The audio engine MUST have been stopped before calling this.
      @param audioStream

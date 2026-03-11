@@ -1,0 +1,24 @@
+# Build outputs
+src/build/
+EMUUSBAudio.kext/
+Info.plist
+*.xcuserstate
+**/*.xcworkspace/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+**/*.xcodeproj/project.xcworkspace/xcuserdata/
+**/WorkspaceSettings.xcsettings
+
+# DerivedData
+~/Library/Developer/Xcode/DerivedData/
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
+
+# Xcode temporary/generated files
+*.o
+*.d
+*.dia
+
+# Build artifacts
+build_output.txt

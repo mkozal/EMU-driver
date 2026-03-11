@@ -21,6 +21,7 @@
 		6C2C072219E4740700F1FD56 /* EMUUSBAudioPlugin.h in Headers */ = {isa = PBXBuildFile; fileRef = 6C2C072019E4740700F1FD56 /* EMUUSBAudioPlugin.h */; };
 		6C2C072619E4755A00F1FD56 /* EMUUSBUserClient.h in Headers */ = {isa = PBXBuildFile; fileRef = 6C2C072419E4755A00F1FD56 /* EMUUSBUserClient.h */; };
 		6C2C072D19E4864D00F1FD56 /* IOSyncer.h in Headers */ = {isa = PBXBuildFile; fileRef = 6C2C072B19E4864D00F1FD56 /* IOSyncer.h */; };
+		6C2C072E19E4864D00F1FD56 /* IOSyncer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6C2C072C19E4864D00F1FD56 /* IOSyncer.cpp */; };
 		6C39DF8919F2C3BD00D027FC /* EMUUSBAudioClip.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6C77361F19E3234900ED3FAA /* EMUUSBAudioClip.cpp */; };
 		6C5464221A15606C003C251B /* EMUUSBUserClient.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6C2C072319E4755A00F1FD56 /* EMUUSBUserClient.cpp */; };
 		6C5A3AF31A285C0200F4DC13 /* RingBufferT.h in Headers */ = {isa = PBXBuildFile; fileRef = 6C5A3AF11A285C0200F4DC13 /* RingBufferT.h */; };
@@ -75,6 +76,7 @@
 		6C2C072719E475B700F1FD56 /* EMUUSBPlatform.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = EMUUSBPlatform.h; sourceTree = "<group>"; };
 		6C2C072819E475EE00F1FD56 /* EMUUSBAudioDefines.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = EMUUSBAudioDefines.h; sourceTree = "<group>"; };
 		6C2C072B19E4864D00F1FD56 /* IOSyncer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSyncer.h; sourceTree = "<group>"; };
+		6C2C072C19E4864D00F1FD56 /* IOSyncer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IOSyncer.cpp; sourceTree = "<group>"; };
 		6C5A3AF11A285C0200F4DC13 /* RingBufferT.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RingBufferT.h; sourceTree = "<group>"; };
 		6C5A3AFF1A28DF9700F4DC13 /* RingBufferDefault.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RingBufferDefault.h; sourceTree = "<group>"; };
 		6C5A3B001A290F4800F4DC13 /* EMUUSBInputStream.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = EMUUSBInputStream.cpp; sourceTree = "<group>"; };
@@ -123,6 +125,7 @@
 			isa = PBXGroup;
 			children = (
 				6C2C072B19E4864D00F1FD56 /* IOSyncer.h */,
+				6C2C072C19E4864D00F1FD56 /* IOSyncer.cpp */,
 			);
 			name = oldiokit;
 			sourceTree = "<group>";
@@ -341,6 +344,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6C2C072E19E4864D00F1FD56 /* IOSyncer.cpp in Sources */,
 				6C7861F31D03F7110087FD31 /* IOUSBPipe.cpp in Sources */,
 				6C5464221A15606C003C251B /* EMUUSBUserClient.cpp in Sources */,
 				6C0C68C91D340977002B242E /* USB.cpp in Sources */,
@@ -406,7 +410,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.9;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = "";
 				"OTHER_CFLAGS[arch=*]" = "-DDEBUGLOGGING";
@@ -442,7 +446,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.9;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -457,14 +461,17 @@
 				GCC_PREFIX_HEADER = "EMUUSBAudio/EMUUSBAudio-Prefix.pch";
 				INFOPLIST_FILE = "EMUUSBAudio/EMUUSBAudio-Info-11.plist";
 				INFOPLIST_PREPROCESS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.11;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MODULE_NAME = com.emu.driver.EMUUSBAudio;
 				MODULE_START = 0;
 				MODULE_STOP = 0;
 				MODULE_VERSION = 1.0.0d1;
 				"OTHER_CFLAGS[arch=*]" = "-DDEBUGLOGGING";
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx10.11;
+				SDKROOT = macosx;
+				ARCHS = "arm64e x86_64";
+				VALID_ARCHS = "arm64e x86_64";
+				ONLY_ACTIVE_ARCH = NO;
 				WRAPPER_EXTENSION = kext;
 			};
 			name = Debug;
@@ -479,13 +486,16 @@
 				GCC_PREFIX_HEADER = "EMUUSBAudio/EMUUSBAudio-Prefix.pch";
 				INFOPLIST_FILE = "EMUUSBAudio/EMUUSBAudio-Info-11.plist";
 				INFOPLIST_PREPROCESS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.11;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MODULE_NAME = com.emu.driver.EMUUSBAudio;
 				MODULE_START = 0;
 				MODULE_STOP = 0;
 				MODULE_VERSION = 1.0.0d1;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx10.11;
+				SDKROOT = macosx;
+				ARCHS = "arm64e x86_64";
+				VALID_ARCHS = "arm64e x86_64";
+				ONLY_ACTIVE_ARCH = NO;
 				WRAPPER_EXTENSION = kext;
 			};
 			name = Release;

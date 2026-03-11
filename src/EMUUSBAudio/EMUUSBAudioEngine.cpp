@@ -870,10 +870,10 @@ UInt32 EMUUSBAudioEngine::getCurrentSampleFrame(SInt64 offsetns) {
     //debugIOLog("get current sampleframe %lld", (UInt64)(pos*1000000000));
     
     // modulo 1, but for float. CHECK maybe getting the mantisse would work?
-    if (pos > 1) {
-        pos = pos-1;
-    } else if (pos < 0) {
-        pos = pos+1;
+    long long ipos = (long long)pos;
+    pos = pos - ipos;
+    if (pos < 0) {
+        pos = pos+1.0;
     }
     if (pos < 0 || pos > 1) {
         debugIOLog("warning way-out ring wrap position");
@@ -2234,10 +2234,7 @@ void UsbInputRing::free() {
 }
 
 
-void UsbInputRing::notifyWrap(AbsoluteTime wt) {
-    UInt64 wrapTimeNs;
-    
-    absolutetime_to_nanoseconds(wt,&wrapTimeNs);
+void UsbInputRing::notifyWrap(UInt64 wrapTimeNs) {
     // the timestamp that USB gives us apparently is more accurate than expected from a 1ms poll rate.
     // There seem to be no consistent  offset on the timestamps.
     
