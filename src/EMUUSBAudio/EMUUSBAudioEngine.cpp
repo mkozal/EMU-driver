@@ -67,6 +67,10 @@ void EMUUSBAudioEngine::free () {
 		IOLockFree(mFormatLock);
 		mFormatLock = NULL;
 	}
+	if (NULL != mStopLock) {
+		IOLockFree(mStopLock);
+		mStopLock = NULL;
+	}
     
     frameSizeQueue.free();
     //	if (NULL != mOutput.frameQueuedForList) {
@@ -192,6 +196,8 @@ bool EMUUSBAudioEngine::init (OSDictionary *properties) {
 	neededSampleRateDescriptor = NULL;
 	usbInputStream.usbCompletion = mOutput.usbCompletion= NULL;
 	usbInputStream.usbIsocFrames = mOutput.usbIsocFrames = NULL;
+    mStopLock = IOLockAlloc();
+    mPendingStreamCloses = 0;
     
 Exit:
 	debugIOLogC("EMUUSBAudioEngine[%p]::init ()", this);
@@ -541,6 +547,10 @@ IOReturn EMUUSBAudioEngine::clipOutputSamples (const void *mixBuf, void *sampleB
     
     //	IOLockLock(mFormatLock);
     
+    static int clipLogCount = 0;
+    if (clipLogCount++ % 100 == 0) {
+        doLog("clipOutputSamples called: first=%d num=%d (call #%d)\n", firstSampleFrame, numSampleFrames, clipLogCount);
+    }
     
 	//SInt32 offsetFrames = mOutput.previouslyPreparedBufferOffset / mOutput.multFactor;
 	debugIOLogW("clipOutputSamples firstSampleFrame=%u, numSampleFrames=%d, currentHead =%d ",firstSampleFrame,numSampleFrames,getCurrentSampleFrame(0));
@@ -775,6 +785,11 @@ IOReturn EMUUSBAudioEngine::convertInputSamples (const void *sampleBufNull, void
     // Since we don't tell IOAudioEngine about our sample buffer, we get null for sampleBufNull.
     
 	IOReturn	result;
+    
+    static int convertLogCount = 0;
+    if (convertLogCount++ % 100 == 0) {
+        doLog("convertInputSamples called: first=%d num=%d (call #%d)\n", firstSampleFrame, numSampleFrames, convertLogCount);
+    }
     
     // debugIOLogRD("+convertInputSamples firstSampleFrame=%u, numSampleFrames=%d byteorder=%d bitWidth=%d numchannels=%d latency= %d",firstSampleFrame,numSampleFrames,streamFormat->fByteOrder,streamFormat->fBitWidth,streamFormat->fNumChannels, usbInputRing.available());
     
@@ -1854,7 +1869,24 @@ Exit: // FAILURE EXIT
 	if (kIOReturnSuccess != resultCode) {
         usbInputStream.stop();
         mOutput.stop();
-        IOSleep(1000); // HACK give mInput time to stop. Callback is tricky at this point.
+        // Wait for streams to finish callbacks before releasing pipes.
+        if (mStopLock) {
+            IOLockLock(mStopLock);
+            mPendingStreamCloses = 2;
+            AbsoluteTime deadline;
+            clock_interval_to_deadline(3000, kMillisecondScale, &deadline);
+            while (mPendingStreamCloses > 0) {
+                int waitResult = IOLockSleepDeadline(mStopLock, (void *)&mPendingStreamCloses, deadline, THREAD_UNINT);
+                if (waitResult == THREAD_TIMED_OUT) {
+                    doLog("startUSBStream cleanup: timed out waiting for stream close\n");
+                    mPendingStreamCloses = 0;
+                    break;
+                }
+            }
+            IOLockUnlock(mStopLock);
+        } else {
+            IOSleep(1000);
+        }
         usbInputRing.free();
 		RELEASEOBJ(usbInputStream.pipe);
 		RELEASEOBJ(mOutput.pipe);
@@ -1870,9 +1902,31 @@ IOReturn EMUUSBAudioEngine::stopUSBStream () {
 	usbStreamRunning = FALSE;
     usbInputStream.stop();
     mOutput.stop();
-    // HACK give time to the input channel to stop.
-    // move code to notifyClosed()?  Or consider the sleep as a time-out?
-    IOSleep(1000);
+    
+    // Wait for both streams to finish their callbacks.
+    // Each stream calls streamClosedSignal() from its notifyClosed() callback.
+    if (mStopLock) {
+        IOLockLock(mStopLock);
+        mPendingStreamCloses = 2; // waiting for input + output
+        
+        // Wait with a 3-second timeout as a safety net.
+        // Previously this was IOSleep(1000) which was a race condition.
+        AbsoluteTime deadline;
+        clock_interval_to_deadline(3000, kMillisecondScale, &deadline);
+        while (mPendingStreamCloses > 0) {
+            int waitResult = IOLockSleepDeadline(mStopLock, (void *)&mPendingStreamCloses, deadline, THREAD_UNINT);
+            if (waitResult == THREAD_TIMED_OUT) {
+                doLog("EMUUSBAudioEngine::stopUSBStream WARNING: timed out waiting for stream close (pending=%d)\n", mPendingStreamCloses);
+                mPendingStreamCloses = 0;
+                break;
+            }
+        }
+        IOLockUnlock(mStopLock);
+    } else {
+        // Fallback if lock allocation failed during init
+        IOSleep(1000);
+    }
+    
 	if (NULL != mOutput.pipe) {
 		if (FALSE == terminatingDriver)
 			mOutput.pipe->SetPipePolicy (0, 0);// don't call USB to avoid deadlock
@@ -1905,6 +1959,17 @@ IOReturn EMUUSBAudioEngine::stopUSBStream () {
 	return kIOReturnSuccess;
 }
 
+void EMUUSBAudioEngine::streamClosedSignal() {
+    if (!mStopLock) return;
+    IOLockLock(mStopLock);
+    if (mPendingStreamCloses > 0) {
+        mPendingStreamCloses--;
+    }
+    debugIOLogC("streamClosedSignal: pending=%d", mPendingStreamCloses);
+    IOLockWakeup(mStopLock, (void *)&mPendingStreamCloses, true);
+    IOLockUnlock(mStopLock);
+}
+
 IOReturn EMUUSBAudioEngine::getAnchor(UInt64* frame, AbsoluteTime*	time) {
 	UInt64		theFrame = 0ull;
 	IOReturn	result = kIOReturnError;// initialized to error
@@ -1930,29 +1995,26 @@ IOReturn EMUUSBAudioEngine::getAnchor(UInt64* frame, AbsoluteTime*	time) {
 
 
 bool EMUUSBAudioEngine::willTerminate (IOService * provider, IOOptionBits options) {
+    debugIOLogC("+EMUUSBAudioEngine[%p]::willTerminate provider=%p", this, provider);
     
-	if (usbInputStream.streamInterface == provider) {
+    bool isOurProvider = (usbInputStream.streamInterface == provider || mOutput.streamInterface == provider);
+    
+    if (isOurProvider) {
 		terminatingDriver = TRUE;
-		if (FALSE == usbStreamRunning) {
-			// Close our stream interface and go away because we're not running.
-			usbInputStream.streamInterface->close (this);
-			usbInputStream.streamInterface = NULL;
+		if (usbStreamRunning) {
+			// Stop both streams - the normal stopUSBStream path will handle cleanup.
+			// performAudioEngineStop will be called by IOAudioEngine.
+			debugIOLogC("willTerminate: streams running, stopping via performAudioEngineStop");
 		} else {
-			// Have the write completion routine clean everything up because we are running.
-            usbInputStream.stop();
-		}
-	} else if (mOutput.streamInterface == provider) {
-		terminatingDriver = TRUE;
-		if (FALSE == usbStreamRunning) {
-			// Close our stream interface and go away because we're not running.
-			mOutput.streamInterface->close (this);
-			mOutput.streamInterface = NULL;
-		} else {
-			// Have the write completion routine clean everything up because we are running.
-            mOutput.stop();
-            //			if (0 == usbInputStream.shouldStop) {
-            //				usbInputStream.shouldStop++;
-            //			}
+			// Not running - close the affected interface directly.
+			if (usbInputStream.streamInterface == provider && usbInputStream.streamInterface) {
+				usbInputStream.streamInterface->close (this);
+				usbInputStream.streamInterface = NULL;
+			}
+			if (mOutput.streamInterface == provider && mOutput.streamInterface) {
+				mOutput.streamInterface->close (this);
+				mOutput.streamInterface = NULL;
+			}
 		}
 	}
     
@@ -2313,10 +2375,15 @@ void EMUUSBAudioEngine::OurUSBInputStream::notifyClosed() {
         if (res != kIOReturnSuccess) {
             doLog("problem freeing input stream:%x",res);
         }
-        // this one call is why we need this class
-        theEngine->usbInputStream.streamInterface->close(theEngine);
-        theEngine->usbInputStream.streamInterface = NULL;
+        // Close the stream interface if it hasn't been closed already
+        if (theEngine->usbInputStream.streamInterface) {
+            theEngine->usbInputStream.streamInterface->close(theEngine);
+            theEngine->usbInputStream.streamInterface = NULL;
+        }
     }
+    
+    // Signal that input stream shutdown is complete
+    theEngine->streamClosedSignal();
 }
 
 
@@ -2339,7 +2406,13 @@ void EMUUSBAudioEngine::OurUSBOutputStream::notifyClosed() {
     debugIOLogC("+EMUUSBAudioEngine::OurUSBOutputStream::notifyClosed.");
     
     if (theEngine->terminatingDriver) {
-        theEngine->mOutput.streamInterface->close (theEngine);
-        theEngine->mOutput.streamInterface = NULL;
+        // Close the stream interface if it hasn't been closed already
+        if (theEngine->mOutput.streamInterface) {
+            theEngine->mOutput.streamInterface->close (theEngine);
+            theEngine->mOutput.streamInterface = NULL;
+        }
     }
+    
+    // Signal that output stream shutdown is complete
+    theEngine->streamClosedSignal();
 }

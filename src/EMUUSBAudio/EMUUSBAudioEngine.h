@@ -540,6 +540,18 @@ protected:
     /*! buffer to temporarily store ring buffer data  for conversion to float */
     UInt8 *             buf;
     
+    /*! Lock used to synchronize stream shutdown completion.
+     stopUSBStream waits on this lock instead of using IOSleep. */
+    IOLock *            mStopLock;
+    
+    /*! Number of streams that still need to call notifyClosed.
+     Decremented in notifyClosed; when it hits 0, we wake up stopUSBStream. */
+    volatile UInt32     mPendingStreamCloses;
+    
+    /*! Called from OurUSBInputStream::notifyClosed and OurUSBOutputStream::notifyClosed
+     to signal that a stream's callbacks have all completed. */
+    void                streamClosedSignal();
+    
 };
 
 #endif /* defined(__EMUUSBAudio__EMUUSBAudioEngine__) */
