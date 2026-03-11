@@ -46,7 +46,7 @@ IOReturn EMUUSBInputStream::start(UInt64 startFrameNr) {
     
     shouldStop = 0;
     nextCompleteFrameList = 0;
-    previousFrameList = 3; //  different from currentFrameList.
+    previousFrameList = numUSBFrameLists + 1; //  different from currentFrameList.
     currentReadList = nextCompleteFrameList;
     mDropStartingFrames = kNumberOfStartingFramesToDrop;
     

@@ -35,7 +35,7 @@
 // the debugIOLog will be mapped into this when debugging is enabled.
 // WARNING Logging is broken since Sierra, because OSX logging randomly misses log events.
 #define doLog( message... ) \
-do { printf ( message ); } while (0)
+do { IOLog ( message ); } while (0)
 
 // you may consider using this do { printf ( message ); printf ("\n" ); IOSleep(sleepTime); } while (0)
 

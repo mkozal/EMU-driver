@@ -138,8 +138,13 @@ void EMUUSBOutputStream::writeCompleted (void * parameter, IOReturn result, LowL
     if (!streamInterface) return;
     
     if (kIOReturnSuccess != result && kIOReturnAborted != result) {
-        doLog("** writeCompleted bad result %x",result);
+        doLog("** writeCompleted bad result %x\n",result);
         return;
+    }
+    
+    static int writeLogCount = 0;
+    if (writeLogCount++ % 100 == 0) {
+        doLog("EMUUSBOutputStream::writeCompleted success (call #%d)\n", writeLogCount);
     }
     
     if (shouldStop) {

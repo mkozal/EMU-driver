@@ -60,13 +60,10 @@ void EMUUSBAudioEngine::free () {
 		IOLockFree(mWriteLock);
 		mWriteLock = NULL;
 	}
-	if (NULL != mFormatLock) {
-		if (!IOLockTryLock(mFormatLock)) {
-			IOLockUnlock(mFormatLock);
-		}
-		IOLockFree(mFormatLock);
-		mFormatLock = NULL;
-	}
+    if (NULL != mFormatLock) {
+        IOLockFree(mFormatLock);
+        mFormatLock = NULL;
+    }
 	if (NULL != mStopLock) {
 		IOLockFree(mStopLock);
 		mStopLock = NULL;
@@ -349,6 +346,14 @@ IOReturn EMUUSBAudioEngine::AddAvailableFormatsFromDevice (EMUUSBAudioConfigObje
 				sampleRates = usbAudio->GetSampleRates (ourInterfaceNumber, altSettingIndx);
                 
 				streamFormat.fNumChannels = usbAudio->GetNumChannels (ourInterfaceNumber, altSettingIndx);
+				
+				// Fix for E-MU 0204: hide >2 channel formats in Audio MIDI Setup.
+				if (usbAudioDevice->mControlInterface->getDevice1()->GetVendorID() == 0x041e &&
+					usbAudioDevice->mControlInterface->getDevice1()->GetProductID() == 0x3f19 &&
+					streamFormat.fNumChannels > 2) {
+					continue;
+				}
+
 				streamFormat.fBitDepth = usbAudio->GetSampleSize (ourInterfaceNumber, altSettingIndx);
 				streamFormat.fBitWidth = usbAudio->GetSubframeSize (ourInterfaceNumber, altSettingIndx) * 8;
 				streamFormat.fAlignment = kIOAudioStreamAlignmentLowByte;
@@ -545,11 +550,14 @@ IOReturn EMUUSBAudioEngine::clipOutputSamples (const void *mixBuf, void *sampleB
     
 	IOReturn			result = kIOReturnError;
     
-    //	IOLockLock(mFormatLock);
+    if (mFormatLock) IOLockLock(mFormatLock);
     
     static int clipLogCount = 0;
     if (clipLogCount++ % 100 == 0) {
-        doLog("clipOutputSamples called: first=%d num=%d (call #%d)\n", firstSampleFrame, numSampleFrames, clipLogCount);
+        doLog("EMUUSBAudioEngine::clipOutputSamples called: first=%d num=%d vol=%.2f (call #%d)\n", 
+              firstSampleFrame, numSampleFrames, 
+              mOutputVolume ? mOutputVolume->GetTargetVolume() : -1.0, 
+              clipLogCount);
     }
     
 	//SInt32 offsetFrames = mOutput.previouslyPreparedBufferOffset / mOutput.multFactor;
@@ -606,7 +614,7 @@ IOReturn EMUUSBAudioEngine::clipOutputSamples (const void *mixBuf, void *sampleB
 		result = kIOReturnSuccess;
 	}
     //debugIOLogC("-clipOutput %d to %d estcur= %d", firstSampleFrame,firstSampleFrame+numSampleFrames, getCurrentSampleFrame(0l));
-    //	IOLockUnlock(mFormatLock);
+    if (mFormatLock) IOLockUnlock(mFormatLock);
 	return result;
 }
 
@@ -946,6 +954,12 @@ IOReturn EMUUSBAudioEngine::GetDefaultSettings(IOUSBInterface1  *streamInterface
 		newSampleRate.whole = usbAudioDevice->getHardwareSampleRate();// get the sample rate the device was set to
 		debugIOLogC("hardware sample rate is %d", newSampleRate.whole);
 		info->numChannels = kChannelCount_10;// try 4 channels first - uh... make that 10... uh... this is stupid.
+		// Fix for E-MU 0204: default to 2 channels (stereo) instead of searching from 10.
+		if (usbAudioDevice->mControlInterface->getDevice1()->GetVendorID() == 0x041e && 
+			usbAudioDevice->mControlInterface->getDevice1()->GetProductID() == 0x3f19) {
+			debugIOLogC("Detected E-MU 0204 (041e:3f19). Defaulting to Stereo.");
+			info->numChannels = kChannelCount_STEREO;
+		}
 		mChannelWidth = kBitDepth_24bits;
 		UInt32	altChannelWidth = kBitDepth_16bits;
 		
@@ -1381,7 +1395,8 @@ IOReturn EMUUSBAudioEngine::performAudioEngineStart () {
     
     // Wouter: removed timebomb.
     
-    debugIOLog ("+EMUUSBAudioEngine[%p]::performAudioEngineStart ()", this);
+    
+    doLog ("+EMUUSBAudioEngine[%p]::performAudioEngineStart ()\n", this);
 	// Reset timestamping mechanism
     
     
@@ -1400,7 +1415,7 @@ IOReturn EMUUSBAudioEngine::performAudioEngineStart () {
 }
 
 IOReturn EMUUSBAudioEngine::performAudioEngineStop() {
-    debugIOLogC("+EMUUSBAudioEngine[%p]::performAudioEngineStop ()", this);
+    doLog ("+EMUUSBAudioEngine[%p]::performAudioEngineStop ()\n", this);
 	if (mPlugin)
 		mPlugin->pluginStop ();
     
@@ -1415,7 +1430,7 @@ IOReturn EMUUSBAudioEngine::performFormatChange (IOAudioStream *audioStream, con
 	if (!newFormat)
 		return kIOReturnSuccess;
     
-    //	IOLockLock(mFormatLock);
+    if (mFormatLock) IOLockLock(mFormatLock);
 	IOReturn	result = kIOReturnError;
 	UInt8			streamDirection;
 	bool			needToRestartEngine = false;
@@ -1447,7 +1462,7 @@ IOReturn EMUUSBAudioEngine::performFormatChange (IOAudioStream *audioStream, con
 	}
     
 Exit:
-    //	IOLockUnlock(mFormatLock);
+    if (mFormatLock) IOLockUnlock(mFormatLock);
 	debugIOLog ("-EMUUSBAudioEngine::performFormatChange, result = %x", result);
     return result;
 }
@@ -1512,7 +1527,7 @@ IOReturn EMUUSBAudioEngine::performFormatChangeInternal (IOAudioStream *audioStr
             newAlternateSettingID = usbAudio->FindAltInterfaceWithSettings (usbInputStream.interfaceNumber, newFormat->fNumChannels, newFormat->fBitDepth, sampleRate.whole);
             mPollInterval = (UInt32) (1 << ((UInt32) usbAudio->GetEndpointPollInterval(usbInputStream.interfaceNumber, newAlternateSettingID, newDirection) -1));
             // Wouter: following test is broken, it always will succeed!
-            if ((1 != mPollInterval) || (8 != mPollInterval)) {// disallow selection of endpoints with sub ms polling interval NB - assumes that sub ms device will not use a poll interval of 1 (every microframe)
+            if ((1 != mPollInterval) && (8 != mPollInterval)) {// disallow selection of endpoints with sub ms polling interval NB - assumes that sub ms device will not use a poll interval of 1 (every microframe)
                 newAlternateSettingID = 255;
             }
             debugIOLog ("%d channel %d bit @ %d Hz is not supported. Suggesting alternate setting %d", newFormat->fNumChannels,
@@ -1554,7 +1569,7 @@ IOReturn EMUUSBAudioEngine::performFormatChangeInternal (IOAudioStream *audioStr
         if (FALSE == usbAudio->VerifySampleRateIsSupported(mOutput.interfaceNumber, newAlternateSettingID, sampleRate.whole)) {
             newAlternateSettingID = usbAudio->FindAltInterfaceWithSettings (mOutput.interfaceNumber, newFormat->fNumChannels, newFormat->fBitDepth, sampleRate.whole);
             mPollInterval = (UInt32) (1 << ((UInt32) usbAudio->GetEndpointPollInterval(mOutput.interfaceNumber, newAlternateSettingID, newDirection) -1));
-            if ((1 != mPollInterval) || (8 != mPollInterval)) {// disallow selection of endpoints with sub ms polling interval NB - assumes that sub ms device will not use a poll interval of 1 (every microframe)
+            if ((1 != mPollInterval) && (8 != mPollInterval)) {// disallow selection of endpoints with sub ms polling interval NB - assumes that sub ms device will not use a poll interval of 1 (every microframe)
                 newAlternateSettingID = 255;
             }
             debugIOLog ("%d channel %d bit @ %d Hz is not supported. Suggesting alternate setting %d", newFormat->fNumChannels,
@@ -1643,10 +1658,16 @@ void EMUUSBAudioEngine::resetClipPosition (IOAudioStream *audioStream, UInt32 cl
 IOReturn EMUUSBAudioEngine::SetSampleRate (EMUUSBAudioConfigObject *usbAudio, UInt32 inSampleRate) {
 	IOReturn				result = kIOReturnError;
     
-    debugIOLogC("EMUUSBAudioEngine::SetSampleRate %d", inSampleRate);
+    
+    doLog("EMUUSBAudioEngine::SetSampleRate %d\n", inSampleRate);
 	
     if (usbAudio->IsocEndpointHasSampleFreqControl (mOutput.interfaceNumber, mOutput.alternateSettingID)) {
         debugIOLogC("EMUUSBAudioEngine::SetSampleRate has IsocEndpointHasSampleFreqControl");
+    }
+    
+    // Only send USB request if sample rate actually changed
+    if (inSampleRate == hardwareSampleRate) {
+        return kIOReturnSuccess;
     }
     
     if (usbAudioDevice && usbAudioDevice->hasSampleRateXU()) {// try using the XU method to set the sample rate before using the default
@@ -1860,21 +1881,24 @@ IOReturn EMUUSBAudioEngine::startUSBStream() {
     // filter out USB timing inaccuracy. The USB timing inaccuracy is
     // in the order of 1ms because that's the max update rate we can request.
     // This directly limits our sync accuracy.
-	setClockIsStable(FALSE);
+	setClockIsStable(TRUE);
     
     usbStreamRunning = TRUE;
     resultCode = kIOReturnSuccess;
     
 Exit: // FAILURE EXIT
 	if (kIOReturnSuccess != resultCode) {
-        usbInputStream.stop();
-        mOutput.stop();
+        IOReturn inRes = usbInputStream.stop();
+        IOReturn outRes = mOutput.stop();
         // Wait for streams to finish callbacks before releasing pipes.
         if (mStopLock) {
             IOLockLock(mStopLock);
-            mPendingStreamCloses = 2;
+            mPendingStreamCloses = 0;
+            if (inRes == kIOReturnSuccess) mPendingStreamCloses++;
+            if (outRes == kIOReturnSuccess) mPendingStreamCloses++;
+            
             AbsoluteTime deadline;
-            clock_interval_to_deadline(3000, kMillisecondScale, &deadline);
+            clock_interval_to_deadline(500, kMillisecondScale, &deadline);
             while (mPendingStreamCloses > 0) {
                 int waitResult = IOLockSleepDeadline(mStopLock, (void *)&mPendingStreamCloses, deadline, THREAD_UNINT);
                 if (waitResult == THREAD_TIMED_OUT) {
@@ -1885,7 +1909,7 @@ Exit: // FAILURE EXIT
             }
             IOLockUnlock(mStopLock);
         } else {
-            IOSleep(1000);
+            IOSleep(100);
         }
         usbInputRing.free();
 		RELEASEOBJ(usbInputStream.pipe);
@@ -1900,19 +1924,21 @@ Exit: // FAILURE EXIT
 IOReturn EMUUSBAudioEngine::stopUSBStream () {
 	debugIOLog ("+EMUUSBAudioEngine[%p]::stopUSBStream ()", this);
 	usbStreamRunning = FALSE;
-    usbInputStream.stop();
-    mOutput.stop();
+    IOReturn inRes = usbInputStream.stop();
+    IOReturn outRes = mOutput.stop();
     
     // Wait for both streams to finish their callbacks.
     // Each stream calls streamClosedSignal() from its notifyClosed() callback.
     if (mStopLock) {
         IOLockLock(mStopLock);
-        mPendingStreamCloses = 2; // waiting for input + output
+        mPendingStreamCloses = 0; // wait only for input/output that was running
+        if (inRes == kIOReturnSuccess) mPendingStreamCloses++;
+        if (outRes == kIOReturnSuccess) mPendingStreamCloses++;
         
-        // Wait with a 3-second timeout as a safety net.
-        // Previously this was IOSleep(1000) which was a race condition.
+        // Wait with a 500ms timeout as a safety net.
+        // Previously this was unconditionally waiting for 2 streams, taking 500ms per shutdown!
         AbsoluteTime deadline;
-        clock_interval_to_deadline(3000, kMillisecondScale, &deadline);
+        clock_interval_to_deadline(500, kMillisecondScale, &deadline);
         while (mPendingStreamCloses > 0) {
             int waitResult = IOLockSleepDeadline(mStopLock, (void *)&mPendingStreamCloses, deadline, THREAD_UNINT);
             if (waitResult == THREAD_TIMED_OUT) {
@@ -1924,7 +1950,7 @@ IOReturn EMUUSBAudioEngine::stopUSBStream () {
         IOLockUnlock(mStopLock);
     } else {
         // Fallback if lock allocation failed during init
-        IOSleep(1000);
+        IOSleep(100);
     }
     
 	if (NULL != mOutput.pipe) {
