@@ -140,6 +140,8 @@ protected:
 	thread_call_t			mInitHardwareThread;
 
     bool					mUHCI;
+    bool					mIsHighSpeed;
+    bool					mHubSpeedDiscovered;
     /*! unit ID, copied from mDeviceStatusBuffer periodically */
 	UInt32					mQueryXU;// the XU to query
 	UInt32					mCurSampleRate;

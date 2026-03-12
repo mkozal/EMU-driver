@@ -553,7 +553,7 @@ IOReturn EMUUSBAudioEngine::clipOutputSamples (const void *mixBuf, void *sampleB
     if (mFormatLock) IOLockLock(mFormatLock);
     
     static int clipLogCount = 0;
-    if (clipLogCount++ % 100 == 0) {
+    if (clipLogCount++ % 1000 == 0) {
         doLog("EMUUSBAudioEngine::clipOutputSamples called: first=%d num=%d vol=%.2f (call #%d)\n", 
               firstSampleFrame, numSampleFrames, 
               mOutputVolume ? mOutputVolume->GetTargetVolume() : -1.0, 
@@ -1768,6 +1768,7 @@ IOReturn EMUUSBAudioEngine::startUSBStream() {
 	mOutput.currentFrameList = 0;
     mOutput.bufferOffset = 0;
 	mOutput.previouslyPreparedBufferOffset = 0;		// Start playing from the start of the buffer
+    nextExpectedOutputFrame = 0; // Reset expected frame count for the new stream
 	bzero(mOutput.usbIsocFrames, mOutput.numUSBFrameLists * mOutput.numUSBFramesPerList * sizeof(LowLatencyIsocFrame));
 	bzero(mOutput.usbCompletion, mOutput.numUSBFrameLists * sizeof(LowLatencyCompletion));
     FailIf ((mOutput.numUSBFrameLists < mOutput.numUSBFrameListsToQueue), Exit);
@@ -1864,8 +1865,8 @@ IOReturn EMUUSBAudioEngine::startUSBStream() {
     setRunEraseHead(true); // need it to avoid stutter at start&end and to allow multiple simultaneous playback.
     
     // Ok, all set, go!
-    // plan startFrameNr well in the future, so that we have time to start both streams before that point.
-    startFrameNr = usbInputStream.streamInterface->getDevice1()->getFrameNumber() + 64;
+    // plan startFrameNr in the future, but not too far to reduce latency.
+    startFrameNr = usbInputStream.streamInterface->getDevice1()->getFrameNumber() + 32;
     resultCode = usbInputStream.start(startFrameNr);
     FailIf (kIOReturnSuccess != resultCode, Exit)
     
@@ -1898,7 +1899,7 @@ Exit: // FAILURE EXIT
             if (outRes == kIOReturnSuccess) mPendingStreamCloses++;
             
             AbsoluteTime deadline;
-            clock_interval_to_deadline(500, kMillisecondScale, &deadline);
+            clock_interval_to_deadline(150, kMillisecondScale, &deadline);
             while (mPendingStreamCloses > 0) {
                 int waitResult = IOLockSleepDeadline(mStopLock, (void *)&mPendingStreamCloses, deadline, THREAD_UNINT);
                 if (waitResult == THREAD_TIMED_OUT) {
@@ -1935,10 +1936,10 @@ IOReturn EMUUSBAudioEngine::stopUSBStream () {
         if (inRes == kIOReturnSuccess) mPendingStreamCloses++;
         if (outRes == kIOReturnSuccess) mPendingStreamCloses++;
         
-        // Wait with a 500ms timeout as a safety net.
+        // Wait with a 150ms timeout as a safety net.
         // Previously this was unconditionally waiting for 2 streams, taking 500ms per shutdown!
         AbsoluteTime deadline;
-        clock_interval_to_deadline(500, kMillisecondScale, &deadline);
+        clock_interval_to_deadline(150, kMillisecondScale, &deadline);
         while (mPendingStreamCloses > 0) {
             int waitResult = IOLockSleepDeadline(mStopLock, (void *)&mPendingStreamCloses, deadline, THREAD_UNINT);
             if (waitResult == THREAD_TIMED_OUT) {
@@ -2097,7 +2098,13 @@ IOReturn EMUUSBAudioEngine::initBuffers() {
         
         // Wouter: it seems that 0.1s buffer size is working ok.
         // I guess PAGE_SIZE helps to align buffer in memory.
-		UInt32	numSamplesInBuffer = PAGE_SIZE * (2 + (sampleRate.whole > 48000) + 3 * (sampleRate.whole > 96000) );
+#if defined(__arm64__)
+		// On Apple Silicon, PAGE_SIZE is 16KB, which makes the buffer 4x larger than on Intel.
+		// We use a fixed 4096 base to keep latency consistent with Intel.
+		UInt32	numSamplesInBuffer = 2048 * (2 + (sampleRate.whole > 48000) + 3 * (sampleRate.whole > 96000) );
+#else
+		UInt32	numSamplesInBuffer = 2048 * (2 + (sampleRate.whole > 48000) + 3 * (sampleRate.whole > 96000) );
+#endif
         
 		usbInputStream.bufferSize = numSamplesInBuffer * usbInputStream.multFactor;
 		mOutput.bufferSize = numSamplesInBuffer * mOutput.multFactor;
@@ -2326,7 +2333,7 @@ void UsbInputRing::notifyWrap(UInt64 wrapTimeNs) {
     // the timestamp that USB gives us apparently is more accurate than expected from a 1ms poll rate.
     // There seem to be no consistent  offset on the timestamps.
     
-    if (goodWraps >= 5) {
+    if (goodWraps >= 2) {
         // regular operation after initial wraps. Enable debug line to check timestamping
         //debugIOLogC("UsbInputRing::notifyWrap %lld",wrapTimeNs);
         takeTimeStampNs(lpfilter.filter(wrapTimeNs),TRUE);
@@ -2343,7 +2350,7 @@ void UsbInputRing::notifyWrap(UInt64 wrapTimeNs) {
             // we have floor(expected_wrap_time_ms) and ceil(expected_wrap_time_ms) as possibilities.
             if (errorT < 10000000) { // 1ms = max deviation from expected wraptime.
                 goodWraps ++;
-                if (goodWraps == 5) {
+                if (goodWraps == 2) {
                     lpfilter.init(wrapTimeNs,expected_wrap_time);
                     takeTimeStampNs(wrapTimeNs,FALSE);
                     doLog("USB timer started");

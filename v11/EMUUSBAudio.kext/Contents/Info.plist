@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>BuildMachineOSBuild</key>
-	<string>17G8030</string>
+	<string>25C56</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleDisplayName</key>
@@ -31,17 +31,19 @@
 	<key>DTCompiler</key>
 	<string>com.apple.compilers.llvm.clang.1_0</string>
 	<key>DTPlatformBuild</key>
-	<string>7D175</string>
+	<string>25C57</string>
+	<key>DTPlatformName</key>
+	<string>macosx</string>
 	<key>DTPlatformVersion</key>
-	<string>GM</string>
+	<string>26.2</string>
 	<key>DTSDKBuild</key>
-	<string>15E60</string>
+	<string>25C57</string>
 	<key>DTSDKName</key>
-	<string>macosx10.11</string>
+	<string>macosx26.2</string>
 	<key>DTXcode</key>
-	<string>0730</string>
+	<string>2620</string>
 	<key>DTXcodeBuild</key>
-	<string>7D175</string>
+	<string>17C52</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>EMUSBAudioTrackerPre</key>
@@ -300,6 +302,8 @@
 	</dict>
 	<key>LSApplicationCategoryType</key>
 	<string></string>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2016 W.Pasman</string>
 	<key>OSBundleLibraries</key>

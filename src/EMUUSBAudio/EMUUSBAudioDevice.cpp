@@ -205,7 +205,9 @@ IOReturn EMUUSBAudioDevice::protectedInitHardware(IOService * provider) {
 		mXUChanged = mClockSelector = mDigitalIOStatus = mDigitalIOSyncSrc = mDigitalIOAsyncSrc = mDigitalIOSPDIF = mDevOptionCtrl = NULL;
 		mControlGraph = BuildConnectionGraph(mInterfaceNum);
 		FailIf(NULL == mControlGraph, Exit);
-        
+
+		mHubSpeedDiscovered = false;
+		mIsHighSpeed = false;
 		// Check to make sure that the control interface we loaded against has audio streaming interfaces and not just MIDI.
 		mUSBAudioConfig->GetControlledStreamNumbers(&streamNumbers, &numStreams);
 		debugIOLogC("Num streams controlled = %d", numStreams);
@@ -430,9 +432,9 @@ IOReturn EMUUSBAudioDevice::performPowerStateChange(IOAudioDevicePowerState oldP
 		
 		// [rdar://4234453] Reset the device after waking from sleep just to be safe.
 		FailIf (NULL == mControlInterface, Exit);
-		debugIOLogC("? AppleUSBAudioDevice[%p]::performPowerStateChange () - Resetting port after wake from sleep ...", this);
-		mControlInterface->getDevice1()->ResetDevice();
-		IOSleep (10);
+		debugIOLogC("? AppleUSBAudioDevice[%p]::performPowerStateChange () - Skipping reset after wake from sleep to avoid delay", this);
+		// mControlInterface->getDevice1()->ResetDevice();
+		// IOSleep (10);
 		
 		// We need to restart the time stamp rate timer now
 		debugIOLogC("? AppleUSBAudioDevice[%p]::performPowerStateChange () - Waking from sleep - restarting the rate timer.", this);
@@ -562,6 +564,10 @@ IOReturn EMUUSBAudioDevice::message(UInt32 type, IOService * provider, void * ar
 //}
 
 bool EMUUSBAudioDevice::isHighHubSpeed() {
+    if (mHubSpeedDiscovered) {
+        return mIsHighSpeed;
+    }
+
     if (mControlInterface) {
         IOUSBDevice1*			usbDevice = OSDynamicCast(IOUSBDevice1, mControlInterface->getDevice1());
         IORegistryEntry*		currentEntry = OSDynamicCast(IORegistryEntry, usbDevice);
@@ -569,6 +575,8 @@ bool EMUUSBAudioDevice::isHighHubSpeed() {
         while(currentEntry && usbDevice) {
             if (usbDevice->isHighSpeed()) {
                 debugIOLogC(" ++EMUUSBAudioDevice::hub speed HIGH");
+                mIsHighSpeed = true;
+                mHubSpeedDiscovered = true;
                 return TRUE;
             } else {
                 // Get parent in USB plane
@@ -579,6 +587,8 @@ bool EMUUSBAudioDevice::isHighHubSpeed() {
         } // end while
     }
     debugIOLogC(" ++EMUUSBAudioDevice::hub speed SLOW");
+    mIsHighSpeed = false;
+    mHubSpeedDiscovered = true;
 
     return FALSE;
 }
@@ -2159,26 +2169,22 @@ IOReturn EMUUSBAudioDevice::deviceRequest(    UInt8                   type,
 		if(FALSE == mTerminatingDriver) {
 			UInt32	remainingAttempts = 5;
 			while(remainingAttempts && mControlInterface) {
-                //debugIOLogC("EMUUSBAudioDevice::deviceRequest DeviceRequest");
                 result = mControlInterface->DevRequest(type, request, value, index, length, data);
-                debugIOLogC("EMUUSBAudioDevice::deviceRequest result=%d",result);
 				if(result != kIOReturnSuccess) {
+                    debugIOLogC("EMUUSBAudioDevice::deviceRequest error %x, retries left: %d", result, remainingAttempts - 1);
 					if (kIOUSBPipeStalled == result) {
 						IOUSBPipe*	pipe = mControlInterface->GetPipeObj(0);
 						if (pipe) {
-#ifdef DEBUGLOGGING
-							IOReturn pipeResult = pipe->ClearPipeStall(true);
-							debugIOLogC("clearing pipe stall result %x", pipeResult);
-#else
 							pipe->ClearPipeStall(true);
-#endif
 							break;
 						}
 					}
 					--remainingAttempts;
-					IOSleep(1);
+                    if (remainingAttempts > 0) {
+                        IOSleep(1);
+                    }
 				} else {
-					break;// out of time and there is something wrong with the device
+					break;
 				}
 			}
 		}

@@ -64,7 +64,7 @@ do { IOLog ( message ); } while (0)
 #define debugIOLog2(message...) //debugIOLog(message);
 
 // framelist write debug messages
-#define debugIOLogW(message...) debugIOLog(message);
+#define debugIOLogW(message...) //debugIOLog(message);
 
 // debug time stamps.
 #define debugIOLogT(message...) //debugIOLog(message);
@@ -77,11 +77,11 @@ do { IOLog ( message ); } while (0)
 #define debugIOLogTT(message...)  //debugIOLog(message);
 
 // debug USB read messages
-#define debugIOLogR(message...) debugIOLog(message);
+#define debugIOLogR(message...) //debugIOLog(message);
 
 // debug USB read messages details
 #define debugIOLogRD(message...) //debugIOLog(message);
 
 // debug all control-level messages (setup, initialization, takedown).
-#define debugIOLogC(message...) debugIOLog(message);
+#define debugIOLogC(message...) //debugIOLog(message);
 #endif
