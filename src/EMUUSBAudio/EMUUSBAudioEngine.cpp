@@ -1899,6 +1899,18 @@ Exit: // FAILURE EXIT
             if (outRes == kIOReturnSuccess) mPendingStreamCloses++;
             
             AbsoluteTime deadline;
+            clock_interval_to_deadline(250, kMillisecondScale, &deadline); // Slightly longer for cleanup
+            while (mPendingStreamCloses > 0) {
+                int waitResult = IOLockSleepDeadline(mStopLock, (void *)&mPendingStreamCloses, deadline, THREAD_UNINT);
+                if (waitResult == THREAD_TIMED_OUT) {
+                    doLog("startUSBStream cleanup: timed out waiting for stream close (pending=%d)\n", mPendingStreamCloses);
+                    mPendingStreamCloses = 0;
+                    break;
+                }
+            }
+            IOLockUnlock(mStopLock);
+        }
+            AbsoluteTime deadline;
             clock_interval_to_deadline(150, kMillisecondScale, &deadline);
             while (mPendingStreamCloses > 0) {
                 int waitResult = IOLockSleepDeadline(mStopLock, (void *)&mPendingStreamCloses, deadline, THREAD_UNINT);
@@ -1974,11 +1986,14 @@ IOReturn EMUUSBAudioEngine::stopUSBStream () {
     
 	if (FALSE == terminatingDriver) {
 		// Don't call USB if we are being terminated because we could deadlock their workloop.
-        if (NULL != usbInputStream.streamInterface) // if we don't have an interface, message() got called and we are being terminated
+        if (NULL != usbInputStream.streamInterface) {
+            debugIOLogC("stopUSBStream: setting input alternate interface to kRootAlternateSetting");
 			usbInputStream.streamInterface->SetAlternateInterface (this, kRootAlternateSetting);
-		if (NULL != mOutput.streamInterface) // if we don't have an interface, message() got called and we are being terminated
+        }
+		if (NULL != mOutput.streamInterface) {
+            debugIOLogC("stopUSBStream: setting output alternate interface to kRootAlternateSetting");
 			mOutput.streamInterface->SetAlternateInterface (this, kRootAlternateSetting);
-        
+        }
 	}
     
 	usbStreamRunning = FALSE;

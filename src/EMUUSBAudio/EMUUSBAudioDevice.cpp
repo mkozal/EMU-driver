@@ -2166,28 +2166,33 @@ IOReturn EMUUSBAudioDevice::deviceRequest(    UInt8                   type,
         //debugIOLogC("EMUUSBAudioDevice::deviceRequest locking");
 		IORecursiveLockLock(mInterfaceLock);
         
-		if(FALSE == mTerminatingDriver) {
-			UInt32	remainingAttempts = 5;
-			while(remainingAttempts && mControlInterface) {
+        if(FALSE == mTerminatingDriver) {
+            UInt32    remainingAttempts = 5;
+            while(remainingAttempts && mControlInterface) {
                 result = mControlInterface->DevRequest(type, request, value, index, length, data);
-				if(result != kIOReturnSuccess) {
+                if(result != kIOReturnSuccess) {
                     debugIOLogC("EMUUSBAudioDevice::deviceRequest error %x, retries left: %d", result, remainingAttempts - 1);
-					if (kIOUSBPipeStalled == result) {
-						IOUSBPipe*	pipe = mControlInterface->GetPipeObj(0);
-						if (pipe) {
-							pipe->ClearPipeStall(true);
-							break;
-						}
-					}
-					--remainingAttempts;
+                    
+                    // Terminal errors - no point in retrying
+                    if (result == kIOReturnNoDevice || result == kIOReturnOffline || result == kIOReturnNotAttached) {
+                        break;
+                    }
+
+                    if (kIOUSBPipeStalled == result) {
+                        IOUSBPipe*    pipe = mControlInterface->GetPipeObj(0);
+                        if (pipe) {
+                            pipe->ClearPipeStall(true);
+                        }
+                    }
+                    --remainingAttempts;
                     if (remainingAttempts > 0) {
                         IOSleep(1);
                     }
-				} else {
-					break;
-				}
-			}
-		}
+                } else {
+                    break;
+                }
+            }
+        }
 		IORecursiveLockUnlock(mInterfaceLock);
 	}
 	debugIOLogC("++EMUUSBAudioDevice[%p]::deviceRequest( %d) = %d", this, request, result);
@@ -2440,13 +2445,18 @@ IOReturn EMUUSBAudioDevice::getAnchorFrameAndTimeStamp(UInt64 *frame, AbsoluteTi
 	clock_get_uptime(&finishTime);
 	ADD_ABSOLUTETIME(&finishTime, &offset);	// finishTime is when we timeout
 	thisFrame = mControlInterface->getDevice1()->getFrameNumber();
-	// spin until the frame changes
-	do {
-		clock_get_uptime (&curTime);
-	} while ((thisFrame == mControlInterface->getDevice1()->getFrameNumber ())
-             && (CMP_ABSOLUTETIME (&finishTime, &curTime) > 0));
+    // spin until the frame changes
+    // Optimization: avoid tight busy-loop which can crash USB controller on Apple Silicon
+    while ((thisFrame == mControlInterface->getDevice1()->getFrameNumber())
+             && (CMP_ABSOLUTETIME (&finishTime, &curTime) > 0)) {
+        IODelay(10); // Wait 10 microseconds between polls
+        clock_get_uptime(&curTime);
+    }
     
-	FailIf (CMP_ABSOLUTETIME (&finishTime, &curTime) < 0, Exit);		// if we timed out
+    if (CMP_ABSOLUTETIME (&finishTime, &curTime) < 0) {
+        debugIOLogC("getAnchorFrameAndTimeStamp: timed out waiting for frame change");
+        goto Exit;
+    }
     
 	*frame = ++thisFrame;
 	
