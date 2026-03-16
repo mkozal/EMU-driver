@@ -205,6 +205,7 @@ IOReturn EMUUSBInputStream::readFrameList (UInt32 frameListNum) {
         if (result != kIOReturnSuccess) {
             // FIXME #17 if this goes wrong, why continue?
             doLog("USB pipe READ error %x",result);
+            handleUSBError(result);
         }
 	}
 	return result;

@@ -176,9 +176,11 @@ void EMUUSBOutputStream::writeCompleted (void * parameter, IOReturn result, LowL
     // FIXME use % operator
     UInt32	frameListToWrite = (currentFrameList - 1) + numUSBFrameListsToQueue;
     frameListToWrite -= numUSBFrameLists * (frameListToWrite >= numUSBFrameLists);
-    if (writeFrameList (frameListToWrite) != kIOReturnSuccess) {
+    IOReturn writeResult = writeFrameList (frameListToWrite);
+    if (writeResult != kIOReturnSuccess) {
             // #29 if write fails, we can't keep running
-            debugIOLog("PIPE write error :%x. Stopping OutputStream.",result);
+            debugIOLog("PIPE write error :%x. Stopping OutputStream.", writeResult);
+            handleUSBError(writeResult);
             queueTerminated();
     }
     

@@ -293,6 +293,7 @@ protected:
          @param frameQueue fully initialized FrameSizeQueue. */
         void    init(EMUUSBAudioEngine * engine, UsbInputRing * ring, FrameSizeQueue * frameQueue);
         void    notifyClosed();
+        void    handleUSBError(IOReturn error) override;
         
     private:
         // pointer to the engine. This is just the parent
@@ -317,6 +318,7 @@ protected:
          @param frameQueue fully initialized FrameSizeQueue. */
         IOReturn    init(EMUUSBAudioEngine * engine);
         void    notifyClosed();
+        void    handleUSBError(IOReturn error) override;
         
     private:
         // pointer to the engine. This is just the parent
@@ -551,6 +553,12 @@ protected:
     /*! Called from OurUSBInputStream::notifyClosed and OurUSBOutputStream::notifyClosed
      to signal that a stream's callbacks have all completed. */
     void                streamClosedSignal();
+    
+    /*! Tracks if the USB bus is in a failed state to avoid hanging on sync calls. */
+    Boolean             usbBusFailed;
+    
+    /*! Sets the USB bus failure flag. */
+    void                setUSBBusFailed(bool failed) { usbBusFailed = failed; }
     
 };
 

@@ -60,6 +60,9 @@ public:
      */
     virtual void                notifyClosed() =0  ;
     
+    /*! Called when a serious USB error occurs. */
+    virtual void                handleUSBError(IOReturn error) { }
+    
     /*! This can be called externally to grab all available data from the streams.
      This is to ensure low latency, because the normal USB completion callback
      comes only after all has read. */

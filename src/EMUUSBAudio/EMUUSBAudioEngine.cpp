@@ -1100,6 +1100,7 @@ bool EMUUSBAudioEngine::initHardware (IOService *provider) {
     
     debugIOLog ("+EMUUSBAudioEngine[%p]::initHardware (%p)", this, provider);
 	terminatingDriver = FALSE;
+    usbBusFailed = false;
 	mWriteLock = NULL;
 	mFormatLock = NULL;
     FailIf (FALSE == super::initHardware (provider), Exit);
@@ -1722,6 +1723,8 @@ IOReturn EMUUSBAudioEngine::startUSBStream() {
 	const IOAudioStreamFormat *			inputFormat = usbInputStream.audioStream->getFormat();
 	const IOAudioStreamFormat *			outputFormat = mOutput.audioStream->getFormat();
 	
+    usbBusFailed = false; // reset failure state on start
+    
 	IOReturn							resultCode = kIOReturnError;
 	//IOUSBFindEndpointRequest			audioIsochEndpoint;
 	EMUUSBAudioConfigObject *			usbAudio = usbAudioDevice->GetUSBAudioConfigObject();
@@ -1909,18 +1912,6 @@ Exit: // FAILURE EXIT
                 }
             }
             IOLockUnlock(mStopLock);
-        }
-            AbsoluteTime deadline;
-            clock_interval_to_deadline(150, kMillisecondScale, &deadline);
-            while (mPendingStreamCloses > 0) {
-                int waitResult = IOLockSleepDeadline(mStopLock, (void *)&mPendingStreamCloses, deadline, THREAD_UNINT);
-                if (waitResult == THREAD_TIMED_OUT) {
-                    doLog("startUSBStream cleanup: timed out waiting for stream close\n");
-                    mPendingStreamCloses = 0;
-                    break;
-                }
-            }
-            IOLockUnlock(mStopLock);
         } else {
             IOSleep(100);
         }
@@ -1967,7 +1958,7 @@ IOReturn EMUUSBAudioEngine::stopUSBStream () {
     }
     
 	if (NULL != mOutput.pipe) {
-		if (FALSE == terminatingDriver)
+		if (FALSE == terminatingDriver && FALSE == usbBusFailed)
 			mOutput.pipe->SetPipePolicy (0, 0);// don't call USB to avoid deadlock
 		
 		// Have to close the current pipe so we can open a new one because changing the alternate interface will tear down the current pipe
@@ -1975,7 +1966,7 @@ IOReturn EMUUSBAudioEngine::stopUSBStream () {
 	}
 	RELEASEOBJ(mOutput.associatedPipe);
 	if (NULL != usbInputStream.pipe) {
-		if (FALSE == terminatingDriver)
+		if (FALSE == terminatingDriver && FALSE == usbBusFailed)
 			usbInputStream.pipe->SetPipePolicy (0, 0);// don't call USB to avoid deadlock
 		
 		// Have to close the current pipe so we can open a new one because changing the alternate interface will tear down the current pipe
@@ -1984,8 +1975,9 @@ IOReturn EMUUSBAudioEngine::stopUSBStream () {
 	RELEASEOBJ(usbInputStream.associatedPipe);
     
     
-	if (FALSE == terminatingDriver) {
+	if (FALSE == terminatingDriver && FALSE == usbBusFailed) {
 		// Don't call USB if we are being terminated because we could deadlock their workloop.
+        // Also don't call if the USB bus has failed to avoid hard system hang.
         if (NULL != usbInputStream.streamInterface) {
             debugIOLogC("stopUSBStream: setting input alternate interface to kRootAlternateSetting");
 			usbInputStream.streamInterface->SetAlternateInterface (this, kRootAlternateSetting);
@@ -1994,7 +1986,9 @@ IOReturn EMUUSBAudioEngine::stopUSBStream () {
             debugIOLogC("stopUSBStream: setting output alternate interface to kRootAlternateSetting");
 			mOutput.streamInterface->SetAlternateInterface (this, kRootAlternateSetting);
         }
-	}
+	} else if (usbBusFailed) {
+        doLog("EMUUSBAudioEngine::stopUSBStream SKIPPING SetAlternateInterface due to usbBusFailed state\n");
+    }
     
 	usbStreamRunning = FALSE;
 	debugIOLog ("-EMUUSBAudioEngine[%p]::stopUSBStream ()", this);
@@ -2116,9 +2110,9 @@ IOReturn EMUUSBAudioEngine::initBuffers() {
 #if defined(__arm64__)
 		// On Apple Silicon, PAGE_SIZE is 16KB, which makes the buffer 4x larger than on Intel.
 		// We use a fixed 4096 base to keep latency consistent with Intel.
-		UInt32	numSamplesInBuffer = 2048 * (2 + (sampleRate.whole > 48000) + 3 * (sampleRate.whole > 96000) );
+		UInt32	numSamplesInBuffer = 3072 * (2 + (sampleRate.whole > 48000) + 3 * (sampleRate.whole > 96000) );
 #else
-		UInt32	numSamplesInBuffer = 2048 * (2 + (sampleRate.whole > 48000) + 3 * (sampleRate.whole > 96000) );
+		UInt32	numSamplesInBuffer = 3072 * (2 + (sampleRate.whole > 48000) + 3 * (sampleRate.whole > 96000) );
 #endif
         
 		usbInputStream.bufferSize = numSamplesInBuffer * usbInputStream.multFactor;
@@ -2407,6 +2401,11 @@ void EMUUSBAudioEngine::OurUSBInputStream::init(EMUUSBAudioEngine * engine,
     theEngine = engine;
 }
 
+void EMUUSBAudioEngine::OurUSBInputStream::handleUSBError(IOReturn error) {
+    doLog("EMUUSBAudioEngine::OurUSBInputStream::handleUSBError: %x\n", error);
+    if (theEngine) theEngine->setUSBBusFailed(true);
+}
+
 
 
 void EMUUSBAudioEngine::OurUSBInputStream::notifyClosed() {
@@ -2442,6 +2441,11 @@ void EMUUSBAudioEngine::OurUSBInputStream::notifyClosed() {
 IOReturn EMUUSBAudioEngine::OurUSBOutputStream::init(EMUUSBAudioEngine * engine) {
     theEngine = engine;
     return EMUUSBOutputStream::init();
+}
+
+void EMUUSBAudioEngine::OurUSBOutputStream::handleUSBError(IOReturn error) {
+    doLog("EMUUSBAudioEngine::OurUSBOutputStream::handleUSBError: %x\n", error);
+    if (theEngine) theEngine->setUSBBusFailed(true);
 }
 
 

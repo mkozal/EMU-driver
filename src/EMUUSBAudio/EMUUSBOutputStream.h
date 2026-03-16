@@ -52,6 +52,9 @@ public:
      */
     virtual void                    notifyClosed() = 0  ;
     
+    /*! Called when a serious USB error occurs. */
+    virtual void                    handleUSBError(IOReturn error) { }
+    
     
     UInt32							averageSampleRate;
     
