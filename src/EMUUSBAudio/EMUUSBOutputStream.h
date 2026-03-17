@@ -122,10 +122,11 @@ private:
     volatile UInt32			shouldStop;
     
     
-    /*! When we wrap around in the output buffer, this connects the ends for the output usb data */
-	IOMultiMemoryDescriptor *			theWrapRangeDescriptor;
-    /*! the two parts of a datablock that contains a wrap */
-	IOSubMemoryDescriptor *				theWrapDescriptors[2];
+    /*! When we wrap around in the output buffer, this connects the ends for the output usb data.
+        One per framelist to avoid re-allocation in the hot path. */
+	IOMultiMemoryDescriptor *			theWrapRangeDescriptors[NUMBER_FRAMES]; // Safe upper bound
+    /*! the two parts of a datablock that contains a wrap. Two per framelist. */
+	IOSubMemoryDescriptor *				theWrapSubDescriptors[NUMBER_FRAMES][2];
     
     
     /*! frame size queue, holding sizes of incoming frames in the read stream */

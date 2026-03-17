@@ -19,10 +19,12 @@ IOReturn   EMUUSBOutputStream::init() {
     
     shouldStop = 0;
 
-    // memleak if fail
-    theWrapDescriptors[0] = OSTypeAlloc (IOSubMemoryDescriptor);
-	theWrapDescriptors[1] = OSTypeAlloc (IOSubMemoryDescriptor);
-	ReturnIf (((NULL == theWrapDescriptors[0]) || (NULL == theWrapDescriptors[1])), kIOReturnNoMemory);
+    for (int i = 0; i < NUMBER_FRAMES; i++) {
+        theWrapSubDescriptors[i][0] = OSTypeAlloc (IOSubMemoryDescriptor);
+        theWrapSubDescriptors[i][1] = OSTypeAlloc (IOSubMemoryDescriptor);
+        theWrapRangeDescriptors[i] = NULL;
+        if (!theWrapSubDescriptors[i][0] || !theWrapSubDescriptors[i][1]) return kIOReturnNoMemory;
+    }
 
     
     frameSizeQueue = NULL;
@@ -95,12 +97,12 @@ void EMUUSBOutputStream::free() {
         doLog("EMUUSBOutputStream::free BUG free() called without stop()");
     }
     debugIOLogC("EMUUSBOutputStream::free");
-    if (theWrapRangeDescriptor) {
-		theWrapRangeDescriptor->release ();
-		theWrapDescriptors[0]->release ();
-		theWrapDescriptors[1]->release ();
-		theWrapRangeDescriptor = NULL;
-	}
+    for (int i = 0; i < NUMBER_FRAMES; i++) {
+        if (theWrapRangeDescriptors[i]) theWrapRangeDescriptors[i]->release();
+        if (theWrapSubDescriptors[i][0]) theWrapSubDescriptors[i][0]->release();
+        if (theWrapSubDescriptors[i][1]) theWrapSubDescriptors[i][1]->release();
+        theWrapRangeDescriptors[i] = NULL;
+    }
     initialized=false;
 }
 
@@ -117,7 +119,7 @@ IOReturn EMUUSBOutputStream::writeFrameList (UInt32 frameListNum) {
 
     UInt64  frameNr = getNextFrameNr();
     if (needTimeStamps) {
-        result = pipe->Write (theWrapRangeDescriptor,frameNr,numUSBFramesPerList,
+        result = pipe->Write (theWrapRangeDescriptors[frameListNum],frameNr,numUSBFramesPerList,
                               &usbIsocFrames[frameListNum * numUSBFramesPerList], &usbCompletion[frameListNum], 1);
         needTimeStamps = FALSE;
     } else {
@@ -143,7 +145,7 @@ void EMUUSBOutputStream::writeCompleted (void * parameter, IOReturn result, LowL
     }
     
     static int writeLogCount = 0;
-    if (writeLogCount++ % 100 == 0) {
+    if (writeLogCount++ % 5000 == 0) {
         doLog("EMUUSBOutputStream::writeCompleted success (call #%d)\n", writeLogCount);
     }
     
@@ -231,7 +233,7 @@ IOReturn EMUUSBOutputStream::PrepareWriteFrameList (UInt32 listNr) {
             //debugIOLog("write wrap in usbframe %lld list %d byte %d",nextUsableUsbFrameNr,n,numBytesToBufferEnd);
             lastPreparedByte = thisFrameSize - numBytesToBufferEnd;
             usbCompletion[listNr].parameter = (void *)(UInt64)(((n + 1) << 16) | lastPreparedByte);
-            theWrapDescriptors[0]->initSubRange (usbBufferDescriptor, previouslyPreparedBufferOffset, sampleBufferSize - previouslyPreparedBufferOffset, kIODirectionInOut);
+            theWrapSubDescriptors[listNr][0]->initSubRange (usbBufferDescriptor, previouslyPreparedBufferOffset, sampleBufferSize - previouslyPreparedBufferOffset, kIODirectionInOut);
             numBytesToBufferEnd = sampleBufferSize - lastPreparedByte;// reset
             haveWrapped = true;
         } else {
@@ -249,14 +251,14 @@ IOReturn EMUUSBOutputStream::PrepareWriteFrameList (UInt32 listNr) {
     //debugIOLogW("num actual data frames in list %d",numUSBFramesPerList - contiguousZeroes);
     if (haveWrapped) {
         needTimeStamps = TRUE;
-        theWrapDescriptors[1]->initSubRange (usbBufferDescriptor, 0, lastPreparedByte, kIODirectionInOut);
+        theWrapSubDescriptors[listNr][0]->initSubRange (usbBufferDescriptor, previouslyPreparedBufferOffset, sampleBufferSize - previouslyPreparedBufferOffset, kIODirectionInOut);
+        theWrapSubDescriptors[listNr][1]->initSubRange (usbBufferDescriptor, 0, lastPreparedByte, kIODirectionInOut);
         
-        if (NULL != theWrapRangeDescriptor) {
-            theWrapRangeDescriptor->release ();
-            theWrapRangeDescriptor = NULL;
+        if (NULL != theWrapRangeDescriptors[listNr]) {
+            theWrapRangeDescriptors[listNr]->release ();
         }
         
-        theWrapRangeDescriptor = IOMultiMemoryDescriptor::withDescriptors ((IOMemoryDescriptor **)theWrapDescriptors, 2, kIODirectionInOut, true);
+        theWrapRangeDescriptors[listNr] = IOMultiMemoryDescriptor::withDescriptors ((IOMemoryDescriptor **)theWrapSubDescriptors[listNr], 2, kIODirectionInOut, true);
     } else {
         bufferDescriptors[listNr]->initSubRange (usbBufferDescriptor, previouslyPreparedBufferOffset, thisFrameListSize, kIODirectionInOut);
         FailIf (NULL == bufferDescriptors[listNr], Exit);

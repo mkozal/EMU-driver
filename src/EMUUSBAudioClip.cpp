@@ -3658,6 +3658,11 @@ void SmoothVolume(
                   long usedNumberOfSamples,
                   long numberOfChannels)
 {
+	if (targetVolume == lastVolume) {
+        if (targetVolume == 1.0) return;
+        Volume(theMixBuffer, targetVolume, theFirstSample, usedNumberOfSamples);
+        return;
+    }
 	Float32 theDifference = (targetVolume - lastVolume) / (float)numSampleFrames;
 	Float32 currentVolume = lastVolume;
 	

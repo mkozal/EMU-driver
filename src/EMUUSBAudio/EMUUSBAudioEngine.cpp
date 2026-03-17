@@ -553,7 +553,7 @@ IOReturn EMUUSBAudioEngine::clipOutputSamples (const void *mixBuf, void *sampleB
     if (mFormatLock) IOLockLock(mFormatLock);
     
     static int clipLogCount = 0;
-    if (clipLogCount++ % 1000 == 0) {
+    if (clipLogCount++ % 5000 == 0) {
         doLog("EMUUSBAudioEngine::clipOutputSamples called: first=%d num=%d vol=%.2f (call #%d)\n", 
               firstSampleFrame, numSampleFrames, 
               mOutputVolume ? mOutputVolume->GetTargetVolume() : -1.0, 
@@ -795,7 +795,7 @@ IOReturn EMUUSBAudioEngine::convertInputSamples (const void *sampleBufNull, void
 	IOReturn	result;
     
     static int convertLogCount = 0;
-    if (convertLogCount++ % 100 == 0) {
+    if (convertLogCount++ % 1000 == 0) {
         doLog("convertInputSamples called: first=%d num=%d (call #%d)\n", firstSampleFrame, numSampleFrames, convertLogCount);
     }
     
